@@ -20,11 +20,23 @@ const getStudyPlan = async (req, res) => {
             [plan.id]
         );
 
+        // Fetch sessions for all these daily plans
+        const dailyPlansWithSessions = await Promise.all(dailyPlans.map(async (dp) => {
+            const [sessions] = await db.query(
+                'SELECT * FROM study_sessions WHERE daily_plan_id = ?',
+                [dp.id]
+            );
+            return {
+                ...dp,
+                sessions: sessions
+            };
+        }));
+
         res.json({
             success: true,
             data: {
                 ...plan,
-                daily_plans: dailyPlans
+                daily_plans: dailyPlansWithSessions
             }
         });
 

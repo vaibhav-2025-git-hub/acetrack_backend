@@ -24,6 +24,17 @@ app.use(cors());
 app.use(helmet());
 app.use(morgan('dev'));
 
+// Health Check Endpoint
+app.get('/health', async (req, res) => {
+    try {
+        await db.query('SELECT 1');
+        res.status(200).json({ status: 'ok', database: 'connected' });
+    } catch (error) {
+        console.error('Database connection failed:', error);
+        res.status(500).json({ status: 'error', database: 'disconnected', error: error.message });
+    }
+});
+
 // Mount routers
 app.use('/api/auth', authRoutes);
 app.use('/api/flashcards', flashcardRoutes);
@@ -34,8 +45,16 @@ app.use('/api/quiz', quizRoutes);
 
 const PORT = process.env.PORT || 3000;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
     console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+
+    try {
+        await db.query('SELECT 1');
+        console.log('MySQL Database Connected Successfully');
+    } catch (error) {
+        console.error('MySQL Database Connection Failed:', error.message);
+        // We don't exit here to allow server to stay up, but log the error
+    }
 });
 
 // Handle unhandled promise rejections

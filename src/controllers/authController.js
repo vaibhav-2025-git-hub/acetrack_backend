@@ -4,17 +4,24 @@ const jwt = require('jsonwebtoken');
 const { generateToken } = require('../utils/jwt');
 
 const register = async (req, res) => {
-    const { email, password, name, user_type } = req.body;
+    console.log('--- NEW REGISTRATION REQUEST ---');
+    console.log('Body:', JSON.stringify(req.body, null, 2));
 
-    if (!email || !password || !name) {
+    const { email: rawEmail, password, name, user_type } = req.body;
+
+    if (!rawEmail || !password || !name) {
         return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
+
+    const email = rawEmail.trim().toLowerCase();
+    console.log(`Normalized Email: ${email}`);
 
     try {
         // Check if user exists
         const [existingUsers] = await db.query('SELECT id FROM users WHERE email = ?', [email]);
         if (existingUsers.length > 0) {
-            return res.status(409).json({ success: false, message: 'User already exists' });
+            console.log(`CONFLICT FOUND: User ${email} already in database (ID: ${existingUsers[0].id})`);
+            return res.status(409).json({ success: false, message: 'CRITICAL: This exact email address is already in our database. Please use a different email or log in.' });
         }
 
         // Hash password
@@ -39,10 +46,11 @@ const register = async (req, res) => {
             success: true,
             message: 'User registered successfully',
             data: {
-                user_id,
+                user_id: result.insertId,
                 email,
                 name,
-                user_type: type,
+                user_type: user_type || 'student',
+                has_profile: false,
                 token
             }
         });
@@ -75,6 +83,12 @@ const login = async (req, res) => {
             // Update last login
             await db.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
 
+
+
+            // Check if user has a profile
+            const [profiles] = await db.query('SELECT id FROM user_profiles WHERE user_id = ?', [user.id]);
+            const has_profile = profiles.length > 0;
+
             const token = generateToken(user.id, user.email);
 
             res.status(200).json({
@@ -85,6 +99,7 @@ const login = async (req, res) => {
                     email: user.email,
                     name: user.name,
                     user_type: user.user_type,
+                    has_profile,
                     token
                 }
             });
