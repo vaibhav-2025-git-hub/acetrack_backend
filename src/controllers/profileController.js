@@ -3,7 +3,12 @@ const db = require('../config/db');
 // Get user profile
 const getProfile = async (req, res) => {
     try {
-        const [profiles] = await db.query('SELECT * FROM user_profiles WHERE user_id = ?', [req.user.id]);
+        const [profiles] = await db.query(`
+            SELECT p.*, u.student_code, u.email 
+            FROM user_profiles p
+            JOIN users u ON p.user_id = u.id
+            WHERE p.user_id = ?
+        `, [req.user.id]);
 
         if (profiles.length === 0) {
             return res.status(404).json({ success: false, message: 'Profile not found' });

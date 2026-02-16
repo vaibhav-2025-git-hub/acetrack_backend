@@ -7,7 +7,7 @@ const register = async (req, res) => {
     console.log('--- NEW REGISTRATION REQUEST ---');
     console.log('Body:', JSON.stringify(req.body, null, 2));
 
-    const { email: rawEmail, password, name, user_type } = req.body;
+    const { email: rawEmail, password, name, user_type, studentEmail, relationship } = req.body;
 
     if (!rawEmail || !password || !name) {
         return res.status(400).json({ success: false, message: 'Missing required fields' });
@@ -29,10 +29,32 @@ const register = async (req, res) => {
         const password_hash = await bcrypt.hash(password, salt);
         const type = user_type || 'student';
 
+        let student_id = null;
+        let student_code = null;
+
+        if (type === 'student') {
+            student_code = 'ACE-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+        } else if (type === 'parent') {
+            if (req.body.studentCode) {
+                const [students] = await db.query('SELECT id FROM users WHERE student_code = ? AND user_type = "student"', [req.body.studentCode.trim().toUpperCase()]);
+                if (students.length > 0) {
+                    student_id = students[0].id;
+                    console.log(`LINKED student ID ${req.body.studentCode} (ID: ${student_id}) to parent ${email}`);
+                }
+            } else if (studentEmail) {
+                // Support legacy email linking
+                const [students] = await db.query('SELECT id FROM users WHERE email = ? AND user_type = "student"', [studentEmail.trim().toLowerCase()]);
+                if (students.length > 0) {
+                    student_id = students[0].id;
+                    console.log(`LINKED student ${studentEmail} (ID: ${student_id}) to parent ${email}`);
+                }
+            }
+        }
+
         // Create user
         const [result] = await db.query(
-            'INSERT INTO users (email, password_hash, name, user_type) VALUES (?, ?, ?, ?)',
-            [email, password_hash, name, type]
+            'INSERT INTO users (email, password_hash, name, user_type, student_id, relationship, student_code) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [email, password_hash, name, type, student_id, relationship || null, student_code]
         );
 
         const user_id = result.insertId;
@@ -49,7 +71,9 @@ const register = async (req, res) => {
                 user_id: result.insertId,
                 email,
                 name,
-                user_type: user_type || 'student',
+                user_type: type,
+                student_id,
+                student_code,
                 has_profile: false,
                 token
             }
@@ -99,6 +123,8 @@ const login = async (req, res) => {
                     email: user.email,
                     name: user.name,
                     user_type: user.user_type,
+                    student_id: user.student_id,
+                    student_code: user.student_code,
                     has_profile,
                     token
                 }

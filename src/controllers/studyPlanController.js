@@ -48,7 +48,7 @@ const getStudyPlan = async (req, res) => {
 
 // Create a new study plan
 const createStudyPlan = async (req, res) => {
-    const { start_date, end_date, total_days, subjects } = req.body; // subjects is array of subject IDs
+    const { start_date, end_date, total_days, subjects, days } = req.body;
 
     if (!start_date || !end_date || !total_days) {
         return res.status(400).json({ success: false, message: 'Missing required fields' });
@@ -67,39 +67,64 @@ const createStudyPlan = async (req, res) => {
 
         const planId = planResult.insertId;
 
-        // Generate daily plans (simplified logic for now)
-        // In a real app, this would use a complex algorithm to distribute topics
-        let currentDate = new Date(start_date);
-        const end = new Date(end_date);
-        let dayCount = 1;
+        // If 'days' is provided (full plan from frontend), use it
+        if (days && Array.isArray(days)) {
+            for (let i = 0; i < days.length; i++) {
+                const day = days[i];
+                const [dayResult] = await connection.query(
+                    'INSERT INTO daily_plans (study_plan_id, user_id, date, day_number, burnout_level) VALUES (?, ?, ?, ?, ?)',
+                    [planId, req.user.id, day.date, i + 1, day.burnoutLevel || 0]
+                );
 
-        while (currentDate <= end) {
-            const formattedDate = currentDate.toISOString().split('T')[0];
-
-            const [dayResult] = await connection.query(
-                'INSERT INTO daily_plans (study_plan_id, user_id, date, day_number) VALUES (?, ?, ?, ?)',
-                [planId, req.user.id, formattedDate, dayCount]
-            );
-
-            // Add dummy sessions for now
-            // ideally we iterate through subjects and topics
-            if (subjects && subjects.length > 0) {
-                // Just add one session per subject for the day
-                for (const subject of subjects) {
-                    // Fetch subject name (mock for now or query DB if needed, assuming passed in body or just ID)
+                for (const session of day.sessions) {
                     await connection.query(
-                        'INSERT INTO study_sessions (daily_plan_id, user_id, subject_id, subject_name, duration) VALUES (?, ?, ?, ?, ?)',
-                        [dayResult.insertId, req.user.id, subject, `Subject ${subject}`, 60]
+                        'INSERT INTO study_sessions (daily_plan_id, user_id, subject_id, subject_name, topic_id, topic_name, chapter_id, chapter_name, duration, completed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [
+                            dayResult.insertId,
+                            req.user.id,
+                            session.subjectId,
+                            session.subjectName,
+                            session.topicId,
+                            session.topicName,
+                            session.chapterId || null,
+                            session.chapterName || null,
+                            session.duration,
+                            session.completed || false
+                        ]
                     );
                 }
             }
+        } else {
+            // Legacy/Mock fallback (simplified logic)
+            let currentDate = new Date(start_date);
+            const end = new Date(end_date);
+            let dayCount = 1;
 
-            currentDate.setDate(currentDate.getDate() + 1);
-            dayCount++;
+            while (currentDate <= end) {
+                const formattedDate = currentDate.toISOString().split('T')[0];
+
+                const [dayResult] = await connection.query(
+                    'INSERT INTO daily_plans (study_plan_id, user_id, date, day_number) VALUES (?, ?, ?, ?)',
+                    [planId, req.user.id, formattedDate, dayCount]
+                );
+
+                if (subjects && subjects.length > 0) {
+                    for (const subject of subjects) {
+                        // Capitalize first letter of subject (physics -> Physics)
+                        const subjectName = subject.charAt(0).toUpperCase() + subject.slice(1);
+                        await connection.query(
+                            'INSERT INTO study_sessions (daily_plan_id, user_id, subject_id, subject_name, duration) VALUES (?, ?, ?, ?, ?)',
+                            [dayResult.insertId, req.user.id, subject, subjectName, 60]
+                        );
+                    }
+                }
+
+                currentDate.setDate(currentDate.getDate() + 1);
+                dayCount++;
+            }
         }
 
         await connection.commit();
-
         res.status(201).json({ success: true, message: 'Study plan created', data: { id: planId } });
 
     } catch (error) {
@@ -111,4 +136,48 @@ const createStudyPlan = async (req, res) => {
     }
 };
 
-module.exports = { getStudyPlan, createStudyPlan };
+// Update a specific study session (e.g., mark as completed)
+const updateSession = async (req, res) => {
+    const { sessionId } = req.params;
+    const { completed, duration } = req.body;
+
+    try {
+        const [sessions] = await db.query('SELECT daily_plan_id FROM study_sessions WHERE id = ? AND user_id = ?', [sessionId, req.user.id]);
+
+        if (sessions.length === 0) {
+            return res.status(404).json({ success: false, message: 'Session not found' });
+        }
+
+        const updates = [];
+        const params = [];
+
+        if (completed !== undefined) {
+            updates.push('completed = ?');
+            params.push(completed);
+            if (completed) {
+                updates.push('completed_at = NOW()');
+            } else {
+                updates.push('completed_at = NULL');
+            }
+        }
+
+        if (duration !== undefined) {
+            updates.push('duration = ?');
+            params.push(duration);
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ success: false, message: 'No updates provided' });
+        }
+
+        params.push(sessionId, req.user.id);
+        await db.query(`UPDATE study_sessions SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`, params);
+
+        res.json({ success: true, message: 'Session updated successfully' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+module.exports = { getStudyPlan, createStudyPlan, updateSession };

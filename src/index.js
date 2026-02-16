@@ -43,6 +43,12 @@ app.use('/api/study-plan', studyPlanRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/quiz', quizRoutes);
 
+// Parent routes
+const parentController = require('./controllers/parentController');
+const { protect } = require('./middleware/authMiddleware');
+app.get('/api/parent/child-data', protect, parentController.getChildData);
+app.post('/api/parent/link', protect, parentController.linkStudent);
+
 const PORT = process.env.PORT || 3000;
 
 const server = app.listen(PORT, async () => {
