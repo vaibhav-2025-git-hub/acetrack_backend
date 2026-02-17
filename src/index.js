@@ -20,6 +20,11 @@ const app = express();
 
 // Middleware
 app.use(express.json());
+app.use((req, res, next) => {
+    console.log(`[${req.method}] ${req.url}`);
+    console.log('Global Body Log:', JSON.stringify(req.body, null, 2));
+    next();
+});
 app.use(cors());
 app.use(helmet());
 app.use(morgan('dev'));
@@ -35,6 +40,8 @@ app.get('/health', async (req, res) => {
     }
 });
 
+
+
 // Mount routers
 app.use('/api/auth', authRoutes);
 app.use('/api/flashcards', flashcardRoutes);
@@ -42,6 +49,8 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/study-plan', studyPlanRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/quiz', quizRoutes);
+app.use('/api/curriculum', require('./routes/curriculumRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
 
 // Parent routes
 const parentController = require('./controllers/parentController');

@@ -86,7 +86,14 @@ const register = async (req, res) => {
 };
 
 const login = async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, user_type } = req.body;
+
+    // DEBUG LOG
+    console.log('--- LOGIN REQUEST DEBUG ---');
+    console.log('Headers Content-Type:', req.headers['content-type']);
+    console.log('Body Keys:', Object.keys(req.body));
+    console.log('Body Full:', JSON.stringify(req.body));
+    console.log('User Type directly:', req.body.user_type);
 
     if (!email || !password) {
         return res.status(400).json({ success: false, message: 'Missing email or password' });
@@ -96,10 +103,18 @@ const login = async (req, res) => {
         const [users] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
 
         if (users.length === 0) {
-            return res.status(401).json({ success: false, message: 'Invalid credentials' });
+            return res.status(401).json({ success: false, message: `No such ${user_type || 'user'} id registered` });
         }
 
         const user = users[0];
+
+        // Strict Role Check
+        console.log(`LOGIN ATTEMPT: Email=${email}, RequestRole=${user_type}, DB_Role=${user.user_type}`);
+
+        if (user_type && user.user_type.toLowerCase() !== user_type.toLowerCase()) {
+            console.log(`ROLE MISMATCH BLOCK: ${user.user_type} !== ${user_type}`);
+            return res.status(401).json({ success: false, message: `No such ${user_type} id registered. Please check if you are logging in from the correct portal.` });
+        }
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
 
@@ -117,7 +132,7 @@ const login = async (req, res) => {
 
             res.status(200).json({
                 success: true,
-                message: 'Login successful',
+                message: 'Login successful (VERIFIED NEW CODE)',
                 data: {
                     user_id: user.id,
                     email: user.email,
@@ -126,7 +141,9 @@ const login = async (req, res) => {
                     student_id: user.student_id,
                     student_code: user.student_code,
                     has_profile,
-                    token
+                    token,
+                    debug_received_type: user_type, // DEBUG: See what we got
+                    debug_body_keys: Object.keys(req.body) // DEBUG: See keys
                 }
             });
         } else {
