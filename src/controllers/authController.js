@@ -62,7 +62,7 @@ const register = async (req, res) => {
         // Create user statistics
         await db.query('INSERT INTO user_statistics (user_id) VALUES (?)', [user_id]);
 
-        const token = generateToken(user_id, email);
+        const token = generateToken(user_id, email, type);
 
         res.status(201).json({
             success: true,
@@ -103,7 +103,11 @@ const login = async (req, res) => {
         const [users] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
 
         if (users.length === 0) {
-            return res.status(401).json({ success: false, message: `No such ${user_type || 'user'} id registered` });
+            let userTypeLabel = user_type;
+            if (user_type === 'platform_admin') {
+                userTypeLabel = 'administrator';
+            }
+            return res.status(401).json({ success: false, message: `No such ${userTypeLabel || 'user'} registered with that email.` });
         }
 
         const user = users[0];
@@ -111,7 +115,12 @@ const login = async (req, res) => {
         // Strict Role Check
         console.log(`LOGIN ATTEMPT: Email=${email}, RequestRole=${user_type}, DB_Role=${user.user_type}`);
 
-        if (user_type && user.user_type.toLowerCase() !== user_type.toLowerCase()) {
+        if (user_type === 'platform_admin') {
+            if (!user.is_admin) {
+                console.log(`ROLE MISMATCH BLOCK: User ${email} attempted admin login without is_admin flag`);
+                return res.status(403).json({ success: false, message: `Forbidden. Administrator access required.` });
+            }
+        } else if (user_type && user.user_type.toLowerCase() !== user_type.toLowerCase()) {
             console.log(`ROLE MISMATCH BLOCK: ${user.user_type} !== ${user_type}`);
             return res.status(401).json({ success: false, message: `No such ${user_type} id registered. Please check if you are logging in from the correct portal.` });
         }
@@ -128,11 +137,11 @@ const login = async (req, res) => {
             const [profiles] = await db.query('SELECT id FROM user_profiles WHERE user_id = ?', [user.id]);
             const has_profile = profiles.length > 0;
 
-            const token = generateToken(user.id, user.email);
+            const token = generateToken(user.id, user.email, user.user_type);
 
             res.status(200).json({
                 success: true,
-                message: 'Login successful (VERIFIED NEW CODE)',
+                message: 'Login successful',
                 data: {
                     user_id: user.id,
                     email: user.email,
@@ -140,6 +149,7 @@ const login = async (req, res) => {
                     user_type: user.user_type,
                     student_id: user.student_id,
                     student_code: user.student_code,
+                    is_admin: user.is_admin === 1 || user.is_admin === true,
                     has_profile,
                     token,
                     debug_received_type: user_type, // DEBUG: See what we got

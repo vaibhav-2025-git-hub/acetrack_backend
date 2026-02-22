@@ -1,20 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../middleware/authMiddleware');
+
+const { protect, authorize } = require('../middleware/authMiddleware');
 const {
     getSubjects,
     getFlashcardsBySubject,
     createFlashcard,
     updateReview,
-    deleteFlashcard
+    updateFlashcard,
+    deleteFlashcard,
+    publishFlashcards
 } = require('../controllers/flashcardController');
 
-router.use(protect); // Protect all routes
-
-router.get('/subjects', getSubjects);
-router.get('/subject/:subjectId', getFlashcardsBySubject);
-router.post('/', createFlashcard);
-router.put('/:id/review', updateReview);
-router.delete('/:id', deleteFlashcard);
+router.get('/subjects', protect, getSubjects);
+router.get('/subject/:subjectId', protect, getFlashcardsBySubject);
+router.post('/', protect, authorize('faculty', 'admin'), createFlashcard);
+router.put('/publish', protect, authorize('faculty', 'admin'), publishFlashcards); // Publish drafts
+router.put('/:id', protect, authorize('faculty', 'admin'), updateFlashcard); // General update
+router.put('/:id/review', protect, updateReview); // Student review
+router.delete('/:id', protect, authorize('faculty', 'admin'), deleteFlashcard);
 
 module.exports = router;

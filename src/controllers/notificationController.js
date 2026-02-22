@@ -15,18 +15,12 @@ const pool = mysql.createPool({
 });
 
 const getNotifications = async (req, res) => {
-    // Ideally filter by user_id OR user_id IS NULL (global)
-    // For now, simple fetch all global + user specific
-    const userId = req.query.userId;
+    // Securely fetch: (global notifications) OR (user specific ones)
+    const userId = req.user.id;
 
     try {
-        let query = 'SELECT * FROM notifications WHERE user_id IS NULL';
-        const params = [];
-
-        if (userId) {
-            query += ' OR user_id = ?';
-            params.push(userId);
-        }
+        let query = 'SELECT * FROM notifications WHERE (user_id IS NULL OR user_id = ?)';
+        const params = [userId];
 
         query += ' ORDER BY created_at DESC LIMIT 50';
 
@@ -40,8 +34,13 @@ const getNotifications = async (req, res) => {
 
 const markRead = async (req, res) => {
     const { id } = req.params;
+    const userId = req.user.id;
     try {
-        await pool.query('UPDATE notifications SET is_read = TRUE WHERE id = ?', [id]);
+        // Users can only mark their own notifications as read
+        const [result] = await pool.query('UPDATE notifications SET is_read = TRUE WHERE id = ? AND (user_id = ? OR user_id IS NULL)', [id, userId]);
+        if (result.affectedRows === 0) {
+            return res.status(403).json({ success: false, message: 'Unauthorized or notification not found' });
+        }
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false });

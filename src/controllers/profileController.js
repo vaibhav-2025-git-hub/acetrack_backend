@@ -18,6 +18,7 @@ const getProfile = async (req, res) => {
         const profile = profiles[0];
         if (profile.selected_subjects) profile.selected_subjects = JSON.parse(profile.selected_subjects);
         if (profile.subject_difficulties) profile.subject_difficulties = JSON.parse(profile.subject_difficulties);
+        if (profile.psychometric_details) profile.psychometric_details = JSON.parse(profile.psychometric_details);
 
         res.json({ success: true, data: profile });
     } catch (error) {
@@ -30,7 +31,8 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
     const {
         name, class: className, board, stream, learning_speed,
-        learning_style, study_duration, selected_subjects, subject_difficulties
+        learning_style, study_duration, selected_subjects, subject_difficulties,
+        psychometric_details
     } = req.body;
 
     try {
@@ -39,18 +41,21 @@ const updateProfile = async (req, res) => {
 
         const subjectsJson = selected_subjects ? JSON.stringify(selected_subjects) : null;
         const difficultiesJson = subject_difficulties ? JSON.stringify(subject_difficulties) : null;
+        const psychometricJson = psychometric_details ? JSON.stringify(psychometric_details) : null;
 
         if (existing.length > 0) {
             // Update
             await db.query(`
         UPDATE user_profiles SET 
-          name = ?, class = ?, board = ?, stream = ?, 
-          learning_speed = ?, learning_style = ?, study_duration = ?, 
-          selected_subjects = ?, subject_difficulties = ?
-        WHERE user_id = ?
+          \`name\` = ?, \`class\` = ?, \`board\` = ?, \`stream\` = ?, 
+          \`learning_speed\` = ?, \`learning_style\` = ?, \`study_duration\` = ?, 
+          \`selected_subjects\` = ?, \`subject_difficulties\` = ?,
+          \`psychometric_details\` = ?
+        WHERE \`user_id\` = ?
       `, [
                 name, className, board, stream, learning_speed,
                 learning_style, study_duration, subjectsJson, difficultiesJson,
+                psychometricJson,
                 req.user.id
             ]);
 
@@ -59,14 +64,14 @@ const updateProfile = async (req, res) => {
             // Create
             await db.query(`
         INSERT INTO user_profiles (
-          user_id, name, class, board, stream, 
-          learning_speed, learning_style, study_duration, 
-          selected_subjects, subject_difficulties
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          \`user_id\`, \`name\`, \`class\`, \`board\`, \`stream\`, 
+          \`learning_speed\`, \`learning_style\`, \`study_duration\`, 
+          \`selected_subjects\`, \`subject_difficulties\`, \`psychometric_details\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
                 req.user.id, name, className, board, stream,
                 learning_speed, learning_style, study_duration,
-                subjectsJson, difficultiesJson
+                subjectsJson, difficultiesJson, psychometricJson
             ]);
 
             res.status(201).json({ success: true, message: 'Profile created' });

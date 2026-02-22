@@ -26,4 +26,13 @@ const protect = async (req, res, next) => {
     }
 };
 
-module.exports = { protect };
+const authorize = (...roles) => {
+    return (req, res, next) => {
+        if (!req.user || !roles.includes(req.user.user_type)) {
+            return res.status(403).json({ success: false, message: `User role ${req.user ? req.user.user_type : 'unknown'} is not authorized to access this route` });
+        }
+        next();
+    };
+};
+
+module.exports = { protect, authorize };

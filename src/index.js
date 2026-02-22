@@ -15,6 +15,7 @@ const profileRoutes = require('./routes/profileRoutes');
 const studyPlanRoutes = require('./routes/studyPlanRoutes');
 const progressRoutes = require('./routes/progressRoutes');
 const quizRoutes = require('./routes/quizRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 
@@ -51,6 +52,7 @@ app.use('/api/progress', progressRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/curriculum', require('./routes/curriculumRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/api/admin', adminRoutes);
 
 // Parent routes
 const parentController = require('./controllers/parentController');
@@ -62,6 +64,7 @@ const PORT = process.env.PORT || 3000;
 
 const server = app.listen(PORT, async () => {
     console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+    console.log('API routes loaded...');
 
     try {
         await db.query('SELECT 1');

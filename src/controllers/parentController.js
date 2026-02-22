@@ -12,6 +12,10 @@ const getChildData = async (req, res) => {
 
         const studentId = users[0].student_id;
 
+        // Fetch basic student info from users table (in case profile is missing)
+        const [studentUser] = await db.query('SELECT name, email, student_code FROM users WHERE id = ?', [studentId]);
+        const basicInfo = studentUser.length > 0 ? studentUser[0] : null;
+
         // Fetch student profile
         const [profiles] = await db.query('SELECT * FROM user_profiles WHERE user_id = ?', [studentId]);
 
@@ -31,7 +35,7 @@ const getChildData = async (req, res) => {
 
             const dailyPlansWithSessions = await Promise.all(dailyPlans.map(async (dp) => {
                 const [sessions] = await db.query(
-                    'SELECT * FROM study_sessions WHERE daily_plan_id = ?',
+                    'SELECT * FROM study_sessions WHERE daily_plan_id = ? ORDER BY id ASC',
                     [dp.id]
                 );
                 return { ...dp, sessions };
@@ -46,21 +50,34 @@ const getChildData = async (req, res) => {
         // Fetch student statistics (for streaks, etc.)
         const [stats] = await db.query('SELECT * FROM user_statistics WHERE user_id = ?', [studentId]);
 
-        if (plan && stats.length > 0) {
-            plan.current_streak = stats[0].current_streak;
-            plan.longest_streak = stats[0].longest_streak;
-            plan.total_study_time = stats[0].total_study_time;
-            plan.average_quiz_score = stats[0].average_quiz_score;
-        }
+        // Fetch quiz history
+        const [quizHistory] = await db.query(
+            'SELECT * FROM quiz_attempts WHERE user_id = ? ORDER BY created_at DESC LIMIT 10',
+            [studentId]
+        );
+
+        // Fetch skipped sessions (History)
+        const [skippedSessions] = await db.query(
+            `SELECT ss.id, ss.subject_name, ss.topic_name, dp.date as original_date
+             FROM study_sessions ss
+             JOIN daily_plans dp ON ss.daily_plan_id = dp.id
+             WHERE ss.user_id = ? AND ss.status = 'skipped'
+             ORDER BY dp.date DESC
+             LIMIT 10`,
+            [studentId]
+        );
 
         res.json({
             success: true,
             data: {
                 student_id: studentId,
+                basic_info: basicInfo,
                 profile: profiles.length > 0 ? profiles[0] : null,
                 studyPlan: plan,
                 progress: progress,
-                statistics: stats.length > 0 ? stats[0] : null
+                statistics: stats.length > 0 ? stats[0] : null,
+                quizHistory: quizHistory,
+                skippedSessions: skippedSessions
             }
         });
 

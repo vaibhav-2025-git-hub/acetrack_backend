@@ -24,7 +24,17 @@ async function createNotification(connection, title, message, type) {
 
 const getAllQuizzes = async (req, res) => {
     try {
-        const [quizzes] = await pool.query('SELECT * FROM quizzes ORDER BY created_at DESC');
+        let query = 'SELECT * FROM quizzes';
+        const params = [];
+
+        // Filter for students
+        if (req.user.user_type !== 'faculty' && req.user.user_type !== 'admin') {
+            query += ' WHERE is_published = 1';
+        }
+
+        query += ' ORDER BY created_at DESC';
+
+        const [quizzes] = await pool.query(query, params);
 
         // Fetch questions for each quiz
         const quizzesWithQuestions = await Promise.all(quizzes.map(async (quiz) => {
@@ -50,10 +60,10 @@ const createQuiz = async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // 1. Create Quiz Recrod
+        // 1. Create Quiz Record (Draft by default)
         const [quizResult] = await connection.query(
-            'INSERT INTO quizzes (title, subject, class) VALUES (?, ?, ?)',
-            [title, subject, className || '11']
+            'INSERT INTO quizzes (title, subject, class, is_published) VALUES (?, ?, ?, ?)',
+            [title, subject, className || '11', false]
         );
         const quizId = quizResult.insertId;
 
@@ -76,19 +86,13 @@ const createQuiz = async (req, res) => {
             }
         }
 
-        // 3. Notify Students
-        await createNotification(
-            connection,
-            'New Quiz Available',
-            `A new quiz "${title}" has been posted for ${subject}.`,
-            'quiz'
-        );
+        // Note: Notification moved to publish action
 
         await connection.commit();
         res.status(201).json({
             success: true,
-            message: 'Quiz created successfully',
-            data: { id: quizId, ...req.body }
+            message: 'Quiz draft created successfully',
+            data: { id: quizId, ...req.body, is_published: false }
         });
     } catch (error) {
         await connection.rollback();
@@ -96,6 +100,55 @@ const createQuiz = async (req, res) => {
         res.status(500).json({ success: false, message: 'Server error' });
     } finally {
         connection.release();
+    }
+};
+
+const publishQuiz = async (req, res) => {
+    const { id } = req.params;
+    console.log(`[DEBUG] Attempting to publish quiz with ID: ${id}`);
+
+    let connection;
+    try {
+        connection = await pool.getConnection(); // Fix: assign to outer variable
+        await connection.beginTransaction();
+
+        console.log('[DEBUG] Transaction started');
+
+        // Update status
+        const [updateResult] = await connection.query('UPDATE quizzes SET is_published = 1 WHERE id = ?', [id]);
+        console.log('[DEBUG] Update result:', updateResult);
+
+        // Get quiz details for notification
+        const [rows] = await connection.query('SELECT * FROM quizzes WHERE id = ?', [id]);
+        if (rows.length === 0) {
+            throw new Error('Quiz not found');
+        }
+        const quiz = rows[0];
+        console.log('[DEBUG] Quiz found:', quiz.title);
+
+        // Notify Students
+        try {
+            await createNotification(
+                connection,
+                'New Quiz Available',
+                `A new quiz "${quiz.title}" has been published for ${quiz.subject}.`,
+                'quiz'
+            );
+            console.log('[DEBUG] Notification created');
+        } catch (notifError) {
+            console.warn('[WARN] Failed to create notification, but continuing publish:', notifError);
+            // Don't fail the whole publish if notification fails, unless critical
+        }
+
+        await connection.commit();
+        console.log('[DEBUG] Transaction committed');
+        res.json({ success: true, message: 'Quiz published successfully' });
+    } catch (error) {
+        if (connection) await connection.rollback();
+        console.error('[ERROR] Error publishing quiz:', error);
+        res.status(500).json({ success: false, message: 'Server error: ' + error.message });
+    } finally {
+        if (connection) connection.release();
     }
 };
 
@@ -210,4 +263,63 @@ const getStats = async (req, res) => {
     }
 };
 
-module.exports = { getAllQuizzes, createQuiz, deleteQuiz, addQuestion, deleteQuestion, submitQuizAttempt, getStats };
+const getQuizHistory = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const [history] = await pool.query(
+            `SELECT qa.*, q.title as quiz_title, q.subject as subject_name, qa.created_at as attempt_date 
+             FROM quiz_attempts qa 
+             LEFT JOIN quizzes q ON qa.subject_id = q.subject AND qa.topic_id = q.title
+             WHERE qa.user_id = ? 
+             ORDER BY qa.created_at DESC`,
+            [userId]
+        );
+        res.json({ success: true, data: history });
+    } catch (error) {
+        console.error('Error fetching history:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// Get a single quiz for attempt (with randomized questions)
+const getQuizForAttempt = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [quizzes] = await pool.query('SELECT * FROM quizzes WHERE id = ? AND is_published = 1', [id]);
+
+        if (quizzes.length === 0) {
+            return res.status(404).json({ success: false, message: 'Quiz not found or not published' });
+        }
+
+        const quiz = quizzes[0];
+
+        // Fetch questions
+        let [questions] = await pool.query('SELECT * FROM quiz_questions WHERE quiz_id = ?', [id]);
+
+        // Randomize Questions (Fisher-Yates Shuffle)
+        for (let i = questions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [questions[i], questions[j]] = [questions[j], questions[i]];
+        }
+
+        // Return quiz with shuffled questions
+        res.json({ success: true, data: { ...quiz, questions } });
+
+    } catch (error) {
+        console.error('Error fetching quiz for attempt:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+module.exports = {
+    getAllQuizzes,
+    createQuiz,
+    deleteQuiz,
+    addQuestion,
+    deleteQuestion,
+    submitQuizAttempt,
+    getStats,
+    getQuizHistory,
+    publishQuiz,
+    getQuizForAttempt
+};
