@@ -224,8 +224,20 @@ const submitQuizAttempt = async (req, res) => {
             ]
         );
 
-        // Check/Update Subject Tracking (optional but good for consistency)
-        // await updateSubjectTracking(userId, subjectId); 
+        // Check for AI recommendations (Weak topic detection)
+        if (score < 50) {
+            try {
+                // Fetch subject/topic names if possible, or just use IDs
+                await pool.query(
+                    `INSERT INTO ai_recommendations (user_id, subject_id, topic_id, score, recommendation_type) 
+                     VALUES (?, ?, ?, ?, 'deep_dive')`,
+                    [userId, subjectId, topicId || 'General', score]
+                );
+                console.log(`[AI] Flagged weak topic for user ${userId}: ${subjectId}/${topicId}`);
+            } catch (aiErr) {
+                console.error('Failed to create AI recommendation:', aiErr);
+            }
+        }
 
         res.status(201).json({ success: true, message: 'Quiz attempt saved', data: { id: result.insertId } });
     } catch (error) {

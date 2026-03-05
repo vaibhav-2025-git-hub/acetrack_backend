@@ -5,6 +5,7 @@ const { protect, authorize } = require('../middleware/authMiddleware');
 const {
     getSubjects,
     getFlashcardsBySubject,
+    getAllFlashcards,
     createFlashcard,
     updateReview,
     updateFlashcard,
@@ -12,6 +13,7 @@ const {
     publishFlashcards
 } = require('../controllers/flashcardController');
 
+router.get('/', protect, getAllFlashcards);
 router.get('/subjects', protect, getSubjects);
 router.get('/subject/:subjectId', protect, getFlashcardsBySubject);
 router.post('/', protect, authorize('faculty', 'admin'), createFlashcard);

@@ -1,7 +1,7 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const { generateToken } = require('../utils/jwt');
+const { logJourneyDirectly } = require('../middleware/journeyMiddleware');
 
 const register = async (req, res) => {
     console.log('--- NEW REGISTRATION REQUEST ---');
@@ -33,7 +33,9 @@ const register = async (req, res) => {
         let student_code = null;
 
         if (type === 'student') {
-            student_code = 'ACE-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+            const firstName = name.split(' ')[0].replace(/[^a-zA-Z]/g, '').toUpperCase().substring(0, 4);
+            const randomNums = Math.floor(1000 + Math.random() * 9000);
+            student_code = `ACE-${firstName}-${randomNums}`;
         } else if (type === 'parent') {
             if (req.body.studentCode) {
                 const [students] = await db.query('SELECT id FROM users WHERE student_code = ? AND user_type = "student"', [req.body.studentCode.trim().toUpperCase()]);
@@ -63,6 +65,9 @@ const register = async (req, res) => {
         await db.query('INSERT INTO user_statistics (user_id) VALUES (?)', [user_id]);
 
         const token = generateToken(user_id, email, type);
+
+        // Journey Log
+        await logJourneyDirectly(user_id, 'register', { user_type: type, email });
 
         res.status(201).json({
             success: true,
@@ -113,15 +118,11 @@ const login = async (req, res) => {
         const user = users[0];
 
         // Strict Role Check
-        console.log(`LOGIN ATTEMPT: Email=${email}, RequestRole=${user_type}, DB_Role=${user.user_type}`);
-
         if (user_type === 'platform_admin') {
             if (!user.is_admin) {
-                console.log(`ROLE MISMATCH BLOCK: User ${email} attempted admin login without is_admin flag`);
                 return res.status(403).json({ success: false, message: `Forbidden. Administrator access required.` });
             }
         } else if (user_type && user.user_type.toLowerCase() !== user_type.toLowerCase()) {
-            console.log(`ROLE MISMATCH BLOCK: ${user.user_type} !== ${user_type}`);
             return res.status(401).json({ success: false, message: `No such ${user_type} id registered. Please check if you are logging in from the correct portal.` });
         }
 
@@ -138,6 +139,9 @@ const login = async (req, res) => {
             const has_profile = profiles.length > 0;
 
             const token = generateToken(user.id, user.email, user.user_type);
+
+            // Journey Log
+            await logJourneyDirectly(user.id, 'login', { user_type: user.user_type });
 
             res.status(200).json({
                 success: true,

@@ -228,4 +228,85 @@ const updateSession = async (req, res) => {
     }
 };
 
-module.exports = { getStudyPlan, createStudyPlan, updateSession };
+const getRecommendations = async (req, res) => {
+    try {
+        const [recommendations] = await db.query(
+            'SELECT * FROM ai_recommendations WHERE user_id = ? AND is_applied = FALSE ORDER BY created_at DESC LIMIT 5',
+            [req.user.id]
+        );
+        res.status(200).json({ success: true, data: recommendations });
+    } catch (error) {
+        console.error('Get Recommendations Error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+const applyRecommendation = async (req, res) => {
+    const { id } = req.params;
+    const { date } = req.body; // Target date to inject the session
+
+    if (!date) {
+        return res.status(400).json({ success: false, message: 'Target date required' });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Fetch recommendation
+        const [recs] = await connection.query('SELECT * FROM ai_recommendations WHERE id = ? AND user_id = ?', [id, req.user.id]);
+        if (recs.length === 0) {
+            throw new Error('Recommendation not found');
+        }
+        const rec = recs[0];
+
+        // 2. Find or create daily plan for that date
+        let [dailyPlans] = await connection.query('SELECT id FROM daily_plans WHERE user_id = ? AND date = ?', [req.user.id, date]);
+        let dailyPlanId;
+
+        if (dailyPlans.length === 0) {
+            // Find active study plan
+            const [activePlans] = await connection.query('SELECT id FROM study_plans WHERE user_id = ? ORDER BY start_date DESC LIMIT 1', [req.user.id]);
+            if (activePlans.length === 0) throw new Error('No active study plan found');
+
+            const [result] = await connection.query(
+                'INSERT INTO daily_plans (study_plan_id, user_id, date, day_number) VALUES (?, ?, ?, 1)',
+                [activePlans[0].id, req.user.id, date]
+            );
+            dailyPlanId = result.insertId;
+        } else {
+            dailyPlanId = dailyPlans[0].id;
+        }
+
+        // 3. Inject "Deep Dive" session
+        await connection.query(
+            `INSERT INTO study_sessions 
+            (daily_plan_id, user_id, subject_id, subject_name, topic_id, topic_name, duration, status, notes) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'not-started', ?)`,
+            [
+                dailyPlanId,
+                req.user.id,
+                rec.subject_id,
+                rec.subject_id.charAt(0).toUpperCase() + rec.subject_id.slice(1),
+                rec.topic_id,
+                `${rec.topic_id} (Deep Dive)`,
+                60,
+                `AI Recommended Deep Dive based on quiz score: ${rec.score}%`
+            ]
+        );
+
+        // 4. Mark recommendation as applied
+        await connection.query('UPDATE ai_recommendations SET is_applied = TRUE WHERE id = ?', [id]);
+
+        await connection.commit();
+        res.status(200).json({ success: true, message: 'Recommendation applied to study plan' });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Apply Recommendation Error:', error);
+        res.status(500).json({ success: false, message: error.message || 'Server error' });
+    } finally {
+        connection.release();
+    }
+};
+
+module.exports = { getStudyPlan, createStudyPlan, updateSession, getRecommendations, applyRecommendation };

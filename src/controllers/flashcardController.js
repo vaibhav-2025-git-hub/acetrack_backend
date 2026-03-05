@@ -61,14 +61,15 @@ const getFlashcardsBySubject = async (req, res) => {
 const createFlashcard = async (req, res) => {
     const { subject_id, topic_id, question, answer, difficulty } = req.body;
 
-    if (!subject_id || !topic_id || !question || !answer) {
+    if (!subject_id || !question || !answer) {
         return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
+    const topic = topic_id || 'general';
 
     try {
         const [result] = await db.query(
             'INSERT INTO flashcards (user_id, subject_id, topic_id, question, answer, difficulty, next_review_date, is_published) VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?)',
-            [req.user.id, subject_id, topic_id, question, answer, difficulty || 'medium', false]
+            [req.user.id, subject_id, topic, question, answer, difficulty || 'medium', false]
         );
 
         res.status(201).json({
@@ -191,9 +192,33 @@ const deleteFlashcard = async (req, res) => {
     }
 };
 
+const getAllFlashcards = async (req, res) => {
+    try {
+        let query = 'SELECT * FROM flashcards WHERE 1=1';
+        const params = [];
+
+        if (req.user.user_type === 'faculty' || req.user.user_type === 'admin') {
+            // Faculty see their own cards (drafts & published)
+            query += ' AND user_id = ?';
+            params.push(req.user.id);
+        } else {
+            // Students see their own cards OR published cards
+            query += ' AND (user_id = ? OR is_published = 1)';
+            params.push(req.user.id);
+        }
+
+        const [flashcards] = await db.query(query, params);
+        res.json({ success: true, data: flashcards });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
 module.exports = {
     getSubjects,
     getFlashcardsBySubject,
+    getAllFlashcards,
     createFlashcard,
     updateReview,
     updateFlashcard,

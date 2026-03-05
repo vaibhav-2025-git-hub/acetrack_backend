@@ -19,6 +19,13 @@ const getChildData = async (req, res) => {
         // Fetch student profile
         const [profiles] = await db.query('SELECT * FROM user_profiles WHERE user_id = ?', [studentId]);
 
+        let profile = profiles.length > 0 ? profiles[0] : null;
+        if (profile) {
+            if (profile.selected_subjects && typeof profile.selected_subjects === 'string') profile.selected_subjects = JSON.parse(profile.selected_subjects);
+            if (profile.subject_difficulties && typeof profile.subject_difficulties === 'string') profile.subject_difficulties = JSON.parse(profile.subject_difficulties);
+            if (profile.psychometric_details && typeof profile.psychometric_details === 'string') profile.psychometric_details = JSON.parse(profile.psychometric_details);
+        }
+
         // Fetch student study plan
         const [plans] = await db.query(
             'SELECT * FROM study_plans WHERE user_id = ? ORDER BY start_date DESC LIMIT 1',
@@ -72,7 +79,7 @@ const getChildData = async (req, res) => {
             data: {
                 student_id: studentId,
                 basic_info: basicInfo,
-                profile: profiles.length > 0 ? profiles[0] : null,
+                profile: profile,
                 studyPlan: plan,
                 progress: progress,
                 statistics: stats.length > 0 ? stats[0] : null,

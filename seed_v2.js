@@ -16,28 +16,25 @@ async function seedDatabase() {
         await connection.query('SET FOREIGN_KEY_CHECKS = 0');
 
         const tablesToClear = [
-            'notifications',
-            'quiz_attempts',
-            'progress_data',
-            'study_sessions',
-            'study_plans',
-            'daily_plans',
-            'user_profiles',
-            'user_statistics',
-            'subject_tracking',
-            'schedule_changes',
-            'users'
+            'notifications', 'quiz_attempts', 'progress_data', 'study_sessions',
+            'study_plans', 'daily_plans', 'user_profiles', 'user_statistics',
+            'subject_tracking', 'schedule_changes', 'users'
         ];
 
         for (const table of tablesToClear) {
             await connection.query(`TRUNCATE TABLE ${table}`);
-            console.log(`Cleared ${table}`);
         }
-
         await connection.query('SET FOREIGN_KEY_CHECKS = 1');
 
-        console.log('\n--- Seeding Test Users ---');
-        const passwordHash = await bcrypt.hash('Password123', 10);
+        console.log('\n--- Seeding Test Users with Verified Hashes ---');
+        const password = 'Password123';
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(password, salt);
+
+        const isSelfValid = await bcrypt.compare(password, passwordHash);
+        console.log(`Generated Hash: ${passwordHash} (Verified: ${isSelfValid})`);
+
+        if (!isSelfValid) throw new Error('Hash verification failed during generation!');
 
         // 1. Alex Student
         const [alexRes] = await connection.query(
@@ -76,11 +73,8 @@ async function seedDatabase() {
 
         for (const u of allUsers) {
             const psychometricDetails = {
-                accuracy: 75,
-                totalQuestions: 50,
-                correctAnswers: 38,
-                avgTimePerQuestion: 18.2,
-                categoryScores: { Math: 85, Science: 78, English: 92 }
+                accuracy: 75, totalQuestions: 50, correctAnswers: 38,
+                avgTimePerQuestion: 18.2, categoryScores: { Math: 85, Science: 78, English: 92 }
             };
 
             await connection.query(
@@ -89,22 +83,13 @@ async function seedDatabase() {
             );
 
             if (u.type === 'student') {
-                // Create Study Plan
-                const [spRes] = await connection.query(
-                    'INSERT INTO study_plans (user_id, start_date, end_date, total_days) VALUES (?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 30 DAY), 30)',
-                    [u.id]
-                );
+                const [spRes] = await connection.query('INSERT INTO study_plans (user_id, start_date, end_date, total_days) VALUES (?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 30 DAY), 30)', [u.id]);
                 const spId = spRes.insertId;
 
-                // Create Daily Plans for 3 days
                 for (let day = 1; day <= 3; day++) {
-                    const [dpRes] = await connection.query(
-                        'INSERT INTO daily_plans (study_plan_id, user_id, date, day_number) VALUES (?, ?, DATE_ADD(CURDATE(), INTERVAL ? DAY), ?)',
-                        [spId, u.id, day - 1, day]
-                    );
+                    const [dpRes] = await connection.query('INSERT INTO daily_plans (study_plan_id, user_id, date, day_number) VALUES (?, ?, DATE_ADD(CURDATE(), INTERVAL ? DAY), ?)', [spId, u.id, day - 1, day]);
                     const dpId = dpRes.insertId;
 
-                    // Create Sessions
                     const subjects = ['Mathematics', 'Physics', 'Chemistry'];
                     for (let s = 0; s < subjects.length; s++) {
                         await connection.query(
@@ -116,15 +101,10 @@ async function seedDatabase() {
             }
         }
 
-        console.log('\n--- Seeding Complete ---');
-        console.log('Credentials:');
-        console.log('1. Alex Student: alex@test.com / Password123');
-        console.log('2. Jordan Student: jordan@test.com / Password123');
-        console.log('3. Sarah Parent: sarah@test.com / Password123');
-        console.log('4. Dr. Smith: smith@test.com / Password123');
+        console.log('--- Seeding Done ---');
 
     } catch (err) {
-        console.error('Error during seeding:', err);
+        console.error('Error:', err);
     } finally {
         await connection.end();
     }
