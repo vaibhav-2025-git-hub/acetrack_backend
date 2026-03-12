@@ -289,6 +289,7 @@ const getUserJourney = async (req, res) => {
 module.exports = {
     getPlatformStats,
     getAllUsers,
+    toggleFeature,
     getAnalytics,
     createAnnouncement,
     getAnnouncements,

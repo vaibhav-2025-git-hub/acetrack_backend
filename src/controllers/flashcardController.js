@@ -215,6 +215,19 @@ const getAllFlashcards = async (req, res) => {
     }
 };
 
+const getDue = async (req, res) => {
+    try {
+        const [flashcards] = await db.query(
+            'SELECT * FROM flashcards WHERE user_id = ? AND next_review_date <= CURDATE()',
+            [req.user.id]
+        );
+        res.json({ success: true, data: flashcards });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
 module.exports = {
     getSubjects,
     getFlashcardsBySubject,
@@ -223,5 +236,6 @@ module.exports = {
     updateReview,
     updateFlashcard,
     deleteFlashcard,
-    publishFlashcards
+    publishFlashcards,
+    getDue
 };

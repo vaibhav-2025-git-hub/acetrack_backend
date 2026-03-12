@@ -68,4 +68,41 @@ const updateProgress = async (req, res) => {
     }
 };
 
-module.exports = { getProgress, updateProgress };
+// Get progress statistics
+const getStats = async (req, res) => {
+    try {
+        const [stats] = await db.query('SELECT * FROM user_statistics WHERE user_id = ?', [req.user.id]);
+        const [topicCounts] = await db.query(
+            'SELECT COUNT(*) as total, SUM(mastery_level >= 80) as mastered FROM progress_data WHERE user_id = ?',
+            [req.user.id]
+        );
+
+        res.json({
+            success: true,
+            data: {
+                ...(stats[0] || {}),
+                totalTopics: topicCounts[0].total || 0,
+                masteredTopics: topicCounts[0].mastered || 0
+            }
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// Get progress analytics (e.g., time spent per subject/topic)
+const getAnalytics = async (req, res) => {
+    try {
+        const [analytics] = await db.query(
+            'SELECT topic_id, time_spent, mastery_level, last_studied FROM progress_data WHERE user_id = ? ORDER BY last_studied DESC',
+            [req.user.id]
+        );
+        res.json({ success: true, data: analytics });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+module.exports = { getProgress, updateProgress, getStats, getAnalytics };

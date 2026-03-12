@@ -10,11 +10,13 @@ const {
     updateReview,
     updateFlashcard,
     deleteFlashcard,
-    publishFlashcards
+    publishFlashcards,
+    getDue
 } = require('../controllers/flashcardController');
 
 router.get('/', protect, getAllFlashcards);
 router.get('/subjects', protect, getSubjects);
+router.get('/due', protect, getDue);
 router.get('/subject/:subjectId', protect, getFlashcardsBySubject);
 router.post('/', protect, authorize('faculty', 'admin'), createFlashcard);
 router.put('/publish', protect, authorize('faculty', 'admin'), publishFlashcards); // Publish drafts
