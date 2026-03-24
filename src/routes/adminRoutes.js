@@ -38,10 +38,10 @@ adminRouter.get('/logs/journey/:userId', requireSuperAdmin, getUserJourney);
 // Mount the admin router onto the main router
 // This ensures /announcements is untouched by adminProtect
 router.use('/', (req, res, next) => {
-    // If it's the announcements route, it should have been handled above.
-    // However, if for some reason it wasn't (e.g. wrong method), we still protect it.
+    // If it's the announcements route and a GET request, it's public (as handled above)
+    // We explicitly prevent it from falling into the admin-protected router
     if (req.path === '/announcements' && req.method === 'GET') {
-        return next(); // Should have been caught, but safe-guard
+        return; // Handled by router.get('/announcements') above
     }
     next();
 }, adminRouter);
