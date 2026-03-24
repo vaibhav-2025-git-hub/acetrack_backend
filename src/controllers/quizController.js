@@ -1,18 +1,6 @@
-const mysql = require('mysql2/promise');
-const dotenv = require('dotenv');
-const path = require('path');
-
-dotenv.config({ path: path.join(__dirname, '../../.env') });
-
-const pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-});
+const db = require('../config/db');
+const systemLogger = require('../middleware/loggerMiddleware');
+const { isFeatureEnabled } = require('../utils/featureToggles');
 
 // Helper to create notification
 async function createNotification(connection, title, message, type) {
@@ -34,11 +22,11 @@ const getAllQuizzes = async (req, res) => {
 
         query += ' ORDER BY created_at DESC';
 
-        const [quizzes] = await pool.query(query, params);
+        const [quizzes] = await db.query(query, params);
 
         // Fetch questions for each quiz
         const quizzesWithQuestions = await Promise.all(quizzes.map(async (quiz) => {
-            const [questions] = await pool.query('SELECT * FROM quiz_questions WHERE quiz_id = ?', [quiz.id]);
+            const [questions] = await db.query('SELECT * FROM quiz_questions WHERE quiz_id = ?', [quiz.id]);
             return { ...quiz, questions };
         }));
 
@@ -56,14 +44,20 @@ const createQuiz = async (req, res) => {
         return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    const connection = await pool.getConnection();
+    // Check if quiz generation is enabled
+    const isQuizEnabled = await isFeatureEnabled('quizGeneration');
+    if (!isQuizEnabled) {
+        return res.status(403).json({ success: false, message: 'Quiz generation is currently disabled by administrator' });
+    }
+
+    const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
         // 1. Create Quiz Record (Draft by default)
         const [quizResult] = await connection.query(
             'INSERT INTO quizzes (title, subject, class, is_published) VALUES (?, ?, ?, ?)',
-            [title, subject, className || '11', false]
+            [title, subject, className || '12', false]
         );
         const quizId = quizResult.insertId;
 
@@ -89,6 +83,9 @@ const createQuiz = async (req, res) => {
         // Note: Notification moved to publish action
 
         await connection.commit();
+        
+        systemLogger.info('quiz', `Faculty ${req.user.name} created quiz draft: ${title}`, req.user.id);
+
         res.status(201).json({
             success: true,
             message: 'Quiz draft created successfully',
@@ -109,7 +106,7 @@ const publishQuiz = async (req, res) => {
 
     let connection;
     try {
-        connection = await pool.getConnection(); // Fix: assign to outer variable
+        connection = await db.getConnection();
         await connection.beginTransaction();
 
         console.log('[DEBUG] Transaction started');
@@ -142,6 +139,9 @@ const publishQuiz = async (req, res) => {
 
         await connection.commit();
         console.log('[DEBUG] Transaction committed');
+        
+        systemLogger.info('quiz', `Quiz published: ${quiz.title}`, req.user.id);
+        
         res.json({ success: true, message: 'Quiz published successfully' });
     } catch (error) {
         if (connection) await connection.rollback();
@@ -157,7 +157,7 @@ const addQuestion = async (req, res) => {
     const { question, options, correctAnswer, explanation, difficulty } = req.body;
 
     try {
-        const [result] = await pool.query(
+        const [result] = await db.query(
             `INSERT INTO quiz_questions 
             (quiz_id, question, options, correct_answer, explanation, difficulty) 
             VALUES (?, ?, ?, ?, ?, ?)`,
@@ -180,7 +180,7 @@ const addQuestion = async (req, res) => {
 const deleteQuestion = async (req, res) => {
     const { id } = req.params;
     try {
-        await pool.query('DELETE FROM quiz_questions WHERE id = ?', [id]);
+        await db.query('DELETE FROM quiz_questions WHERE id = ?', [id]);
         res.json({ success: true, message: 'Question deleted' });
     } catch (error) {
         console.error('Error deleting question:', error);
@@ -191,7 +191,7 @@ const deleteQuestion = async (req, res) => {
 const deleteQuiz = async (req, res) => {
     const { id } = req.params;
     try {
-        await pool.query('DELETE FROM quizzes WHERE id = ?', [id]);
+        await db.query('DELETE FROM quizzes WHERE id = ?', [id]);
         res.json({ success: true, message: 'Quiz deleted successfully' });
     } catch (error) {
         console.error('Error deleting quiz:', error);
@@ -208,7 +208,7 @@ const submitQuizAttempt = async (req, res) => {
     }
 
     try {
-        const [result] = await pool.query(
+        const [result] = await db.query(
             `INSERT INTO quiz_attempts 
             (user_id, subject_id, topic_id, total_questions, correct_answers, score, time_taken, quiz_data) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -228,7 +228,7 @@ const submitQuizAttempt = async (req, res) => {
         if (score < 50) {
             try {
                 // Fetch subject/topic names if possible, or just use IDs
-                await pool.query(
+                await db.query(
                     `INSERT INTO ai_recommendations (user_id, subject_id, topic_id, score, recommendation_type) 
                      VALUES (?, ?, ?, ?, 'deep_dive')`,
                     [userId, subjectId, topicId || 'General', score]
@@ -249,16 +249,10 @@ const submitQuizAttempt = async (req, res) => {
 const getStats = async (req, res) => {
     try {
         // 1. Total Quizzes
-        const [quizCount] = await pool.query('SELECT COUNT(*) as count FROM quizzes');
-
-        // 2. Total Questions
-        const [questionCount] = await pool.query('SELECT COUNT(*) as count FROM quiz_questions');
-
-        // 3. Active Students (unique students who have taken at least one quiz)
-        const [activeStudents] = await pool.query('SELECT COUNT(DISTINCT user_id) as count FROM quiz_attempts');
-
-        // 4. Average Score (across all attempts)
-        const [avgScore] = await pool.query('SELECT AVG(score) as avg FROM quiz_attempts');
+        const [quizCount] = await db.query('SELECT COUNT(*) as count FROM quizzes');
+        const [questionCount] = await db.query('SELECT COUNT(*) as count FROM quiz_questions');
+        const [activeStudents] = await db.query('SELECT COUNT(DISTINCT user_id) as count FROM quiz_attempts');
+        const [avgScore] = await db.query('SELECT AVG(score) as avg FROM quiz_attempts');
 
         res.json({
             success: true,
@@ -278,7 +272,7 @@ const getStats = async (req, res) => {
 const getQuizHistory = async (req, res) => {
     try {
         const userId = req.user.id;
-        const [history] = await pool.query(
+        const [history] = await db.query(
             `SELECT qa.*, q.title as quiz_title, q.subject as subject_name, qa.created_at as attempt_date 
              FROM quiz_attempts qa 
              LEFT JOIN quizzes q ON qa.subject_id = q.subject AND qa.topic_id = q.title
@@ -297,16 +291,8 @@ const getQuizHistory = async (req, res) => {
 const getQuizForAttempt = async (req, res) => {
     const { id } = req.params;
     try {
-        const [quizzes] = await pool.query('SELECT * FROM quizzes WHERE id = ? AND is_published = 1', [id]);
-
-        if (quizzes.length === 0) {
-            return res.status(404).json({ success: false, message: 'Quiz not found or not published' });
-        }
-
-        const quiz = quizzes[0];
-
-        // Fetch questions
-        let [questions] = await pool.query('SELECT * FROM quiz_questions WHERE quiz_id = ?', [id]);
+        const [quizzes] = await db.query('SELECT * FROM quizzes WHERE id = ? AND is_published = 1', [id]);
+        let [questions] = await db.query('SELECT * FROM quiz_questions WHERE quiz_id = ?', [id]);
 
         // Randomize Questions (Fisher-Yates Shuffle)
         for (let i = questions.length - 1; i > 0; i--) {
@@ -315,7 +301,7 @@ const getQuizForAttempt = async (req, res) => {
         }
 
         // Return quiz with shuffled questions
-        res.json({ success: true, data: { ...quiz, questions } });
+        res.json({ success: true, data: { ...quizzes[0], questions } });
 
     } catch (error) {
         console.error('Error fetching quiz for attempt:', error);

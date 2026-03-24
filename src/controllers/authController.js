@@ -1,5 +1,7 @@
 const db = require('../config/db');
+const systemLogger = require('../middleware/loggerMiddleware');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const { generateToken } = require('../utils/jwt');
 const { logJourneyDirectly } = require('../middleware/journeyMiddleware');
 
@@ -34,8 +36,16 @@ const register = async (req, res) => {
 
         if (type === 'student') {
             const firstName = name.split(' ')[0].replace(/[^a-zA-Z]/g, '').toUpperCase().substring(0, 4);
-            const randomNums = Math.floor(1000 + Math.random() * 9000);
-            student_code = `ACE-${firstName}-${randomNums}`;
+            let isUnique = false;
+            while (!isUnique) {
+                const randomNums = Math.floor(100000 + Math.random() * 900000);
+                student_code = `ACE-${firstName}-${randomNums}`;
+                
+                const [existing] = await db.query('SELECT id FROM users WHERE student_code = ?', [student_code]);
+                if (existing.length === 0) {
+                    isUnique = true;
+                }
+            }
         } else if (type === 'parent') {
             if (req.body.studentCode) {
                 const [students] = await db.query('SELECT id FROM users WHERE student_code = ? AND user_type = "student"', [req.body.studentCode.trim().toUpperCase()]);
@@ -68,6 +78,8 @@ const register = async (req, res) => {
 
         // Journey Log
         await logJourneyDirectly(user_id, 'register', { user_type: type, email });
+
+        systemLogger.info('auth', `New user registered: ${email} (${type})`, user_id);
 
         res.status(201).json({
             success: true,
@@ -143,6 +155,8 @@ const login = async (req, res) => {
             // Journey Log
             await logJourneyDirectly(user.id, 'login', { user_type: user.user_type });
 
+            systemLogger.info('auth', `User logged in: ${user.email}`, user.id);
+
             res.status(200).json({
                 success: true,
                 message: 'Login successful',
@@ -172,15 +186,19 @@ const login = async (req, res) => {
 
 const verify = async (req, res) => {
     const { token } = req.body;
+    console.log('[DEBUG] Token verification requested');
 
     if (!token) {
+        console.warn('[WARN] No token provided for verification');
         return res.status(400).json({ success: false, message: 'No token provided' });
     }
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        console.log('[DEBUG] Token verified successfully for user:', decoded.email);
         res.status(200).json({ success: true, data: decoded });
     } catch (error) {
+        console.error('[ERROR] Token verification failed:', error.message);
         res.status(401).json({ success: false, message: 'Invalid token' });
     }
 };

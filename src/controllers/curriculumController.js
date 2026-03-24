@@ -1,18 +1,4 @@
-const mysql = require('mysql2/promise');
-const dotenv = require('dotenv');
-const path = require('path');
-
-dotenv.config({ path: path.join(__dirname, '../../.env') });
-
-const pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-});
+const db = require('../config/db');
 
 // Helper to create notification
 async function createNotification(connection, title, message, type) {
@@ -24,7 +10,7 @@ async function createNotification(connection, title, message, type) {
 
 const getAllTopics = async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM curriculum ORDER BY created_at DESC');
+        const [rows] = await db.query('SELECT * FROM curriculum ORDER BY created_at DESC');
         res.json({ success: true, data: rows });
     } catch (error) {
         console.error('Error fetching curriculum:', error);
@@ -39,7 +25,7 @@ const addTopic = async (req, res) => {
         return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    const connection = await pool.getConnection();
+    const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
@@ -74,7 +60,7 @@ const addTopic = async (req, res) => {
 const deleteTopic = async (req, res) => {
     const { id } = req.params;
     try {
-        await pool.query('DELETE FROM curriculum WHERE id = ?', [id]);
+        await db.query('DELETE FROM curriculum WHERE id = ?', [id]);
         res.json({ success: true, message: 'Topic deleted successfully' });
     } catch (error) {
         console.error('Error deleting topic:', error);

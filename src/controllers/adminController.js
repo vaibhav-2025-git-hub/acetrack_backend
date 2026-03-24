@@ -221,6 +221,7 @@ const createAnnouncement = async (req, res) => {
 
 // @route   GET /api/admin/announcements
 const getAnnouncements = async (req, res) => {
+    console.log('[DEBUG] getAnnouncements controller entered');
     try {
         const [announcements] = await db.query(`
             SELECT a.*, u.name as admin_name 

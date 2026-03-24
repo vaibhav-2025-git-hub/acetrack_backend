@@ -1,4 +1,6 @@
 const db = require('../config/db');
+const systemLogger = require('../middleware/loggerMiddleware');
+const { isFeatureEnabled } = require('../utils/featureToggles');
 
 
 // Get current study plan
@@ -54,6 +56,12 @@ const createStudyPlan = async (req, res) => {
 
     if (!start_date || !end_date || !total_days) {
         return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    // Check if AI study plans are enabled
+    const isStudyPlanEnabled = await isFeatureEnabled('aiStudyPlans');
+    if (!isStudyPlanEnabled) {
+        return res.status(403).json({ success: false, message: 'AI Study Plan generation is currently disabled by administrator' });
     }
 
     const connection = await db.getConnection();
@@ -128,6 +136,9 @@ const createStudyPlan = async (req, res) => {
         }
 
         await connection.commit();
+        
+        systemLogger.info('study-plan', `User ${req.user.name} generated a new study plan for ${total_days} days`, req.user.id);
+
         res.status(201).json({ success: true, message: 'Study plan created', data: { id: planId } });
 
     } catch (error) {

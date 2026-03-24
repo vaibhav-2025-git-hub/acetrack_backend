@@ -1,12 +1,9 @@
+require('dotenv').config();
 const express = require('express');
-const dotenv = require('dotenv');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const db = require('./config/db');
-
-// Load env vars
-dotenv.config();
 
 // Route files
 const authRoutes = require('./routes/authRoutes');
@@ -16,6 +13,7 @@ const studyPlanRoutes = require('./routes/studyPlanRoutes');
 const progressRoutes = require('./routes/progressRoutes');
 const quizRoutes = require('./routes/quizRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const systemLogger = require('./middleware/loggerMiddleware');
 
 const app = express();
 
@@ -24,6 +22,17 @@ app.use(express.json());
 app.use(cors());
 app.use(helmet());
 app.use(morgan('dev'));
+
+// Global Activity Logger Middleware
+app.use((req, res, next) => {
+    // Only log mutations (POST, PUT, DELETE) and certain paths to avoid noise
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+        const userId = req.user ? req.user.id : null;
+        const source = req.path.split('/')[2] || 'api';
+        systemLogger.info(source, `${req.method} request to ${req.path}`, userId);
+    }
+    next();
+});
 
 // Health Check Endpoint
 app.get('/health', async (req, res) => {
@@ -80,6 +89,10 @@ process.on('unhandledRejection', (err, promise) => {
 // Global Error Handler
 app.use((err, req, res, next) => {
     console.error('SERVER ERROR:', err.stack);
+    
+    // Log critical errors to system_logs
+    systemLogger.error('server', err.message, err.stack, req.user ? req.user.id : null);
+
     res.status(err.status || 500).json({
         success: false,
         message: err.message || 'Internal Server Error',

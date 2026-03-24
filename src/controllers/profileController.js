@@ -20,7 +20,7 @@ const getProfile = async (req, res) => {
         if (profile.subject_difficulties) profile.subject_difficulties = JSON.parse(profile.subject_difficulties);
         if (profile.psychometric_details) profile.psychometric_details = JSON.parse(profile.psychometric_details);
 
-        res.json({ success: true, data: profile });
+        return res.json({ success: true, data: profile });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -32,7 +32,7 @@ const updateProfile = async (req, res) => {
     const {
         name, class: className, board, stream, learning_speed,
         learning_style, study_duration, selected_subjects, subject_difficulties,
-        psychometric_details
+        psychometric_details, start_date
     } = req.body;
 
     try {
@@ -50,12 +50,12 @@ const updateProfile = async (req, res) => {
           \`name\` = ?, \`class\` = ?, \`board\` = ?, \`stream\` = ?, 
           \`learning_speed\` = ?, \`learning_style\` = ?, \`study_duration\` = ?, 
           \`selected_subjects\` = ?, \`subject_difficulties\` = ?,
-          \`psychometric_details\` = ?
+          \`psychometric_details\` = ?, \`start_date\` = ?
         WHERE \`user_id\` = ?
       `, [
                 name, className, board, stream, learning_speed,
                 learning_style, study_duration, subjectsJson, difficultiesJson,
-                psychometricJson,
+                psychometricJson, start_date,
                 req.user.id
             ]);
 
@@ -66,12 +66,12 @@ const updateProfile = async (req, res) => {
         INSERT INTO user_profiles (
           \`user_id\`, \`name\`, \`class\`, \`board\`, \`stream\`, 
           \`learning_speed\`, \`learning_style\`, \`study_duration\`, 
-          \`selected_subjects\`, \`subject_difficulties\`, \`psychometric_details\`
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          \`selected_subjects\`, \`subject_difficulties\`, \`psychometric_details\`, \`start_date\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
                 req.user.id, name, className, board, stream,
                 learning_speed, learning_style, study_duration,
-                subjectsJson, difficultiesJson, psychometricJson
+                subjectsJson, difficultiesJson, psychometricJson, start_date
             ]);
 
             res.status(201).json({ success: true, message: 'Profile created' });

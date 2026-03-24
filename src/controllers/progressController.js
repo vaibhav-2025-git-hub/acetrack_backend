@@ -1,8 +1,13 @@
 const db = require('../config/db');
+const { isFeatureEnabled } = require('../utils/featureToggles');
 
 // Get progress for all topics
 const getProgress = async (req, res) => {
     try {
+        const isAnalyticsEnabled = await isFeatureEnabled('analyticsDashboard');
+        if (!isAnalyticsEnabled) {
+            return res.status(403).json({ success: false, message: 'Analytics dashboard is currently disabled by administrator' });
+        }
         const [progress] = await db.query('SELECT * FROM progress_data WHERE user_id = ?', [req.user.id]);
         res.json({ success: true, data: progress });
     } catch (error) {
@@ -71,6 +76,10 @@ const updateProgress = async (req, res) => {
 // Get progress statistics
 const getStats = async (req, res) => {
     try {
+        const isAnalyticsEnabled = await isFeatureEnabled('analyticsDashboard');
+        if (!isAnalyticsEnabled) {
+            return res.status(403).json({ success: false, message: 'Analytics is currently disabled' });
+        }
         const [stats] = await db.query('SELECT * FROM user_statistics WHERE user_id = ?', [req.user.id]);
         const [topicCounts] = await db.query(
             'SELECT COUNT(*) as total, SUM(mastery_level >= 80) as mastered FROM progress_data WHERE user_id = ?',
@@ -94,6 +103,10 @@ const getStats = async (req, res) => {
 // Get progress analytics (e.g., time spent per subject/topic)
 const getAnalytics = async (req, res) => {
     try {
+        const isAnalyticsEnabled = await isFeatureEnabled('analyticsDashboard');
+        if (!isAnalyticsEnabled) {
+            return res.status(403).json({ success: false, message: 'Advanced analytics are currently disabled' });
+        }
         const [analytics] = await db.query(
             'SELECT topic_id, time_spent, mastery_level, last_studied FROM progress_data WHERE user_id = ? ORDER BY last_studied DESC',
             [req.user.id]

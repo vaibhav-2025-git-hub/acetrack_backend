@@ -1,8 +1,15 @@
 const db = require('../config/db');
+const systemLogger = require('../middleware/loggerMiddleware');
+const { isFeatureEnabled } = require('../utils/featureToggles');
 
 // Get child's data for parent
 const getChildData = async (req, res) => {
     try {
+        // Check if parent monitoring is enabled
+        const isMonitoringEnabled = await isFeatureEnabled('parentMonitoring');
+        if (!isMonitoringEnabled) {
+            return res.status(403).json({ success: false, message: 'Parental monitoring is currently disabled by administrator' });
+        }
         // Find the student_id for this parent
         const [users] = await db.query('SELECT student_id FROM users WHERE id = ?', [req.user.id]);
 
@@ -119,6 +126,8 @@ const linkStudent = async (req, res) => {
             'UPDATE users SET student_id = ?, relationship = ? WHERE id = ?',
             [studentId, relationship || null, req.user.id]
         );
+
+        systemLogger.info('parent', `Parent ${req.user.name} linked to student ${studentCode}`, req.user.id);
 
         res.json({ success: true, message: 'Successfully linked to student' });
 
